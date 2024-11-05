@@ -1,0 +1,236 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```r
+---
+title: "Exploratory Data Analysis for Time-Series Anomaly Detection"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(forecast)
+library(zoo)
+library(plotly)
+library(corrplot)
+library(tseries)
+library(imputeTS)
+```
+
+## Data Loading and Preprocessing
+
+```{r load-data}
+# Load the processed time-series data
+data <- read.csv("data/processed/processed_time_series.csv")
+
+# Preview the data
+head(data)
+summary(data)
+
+# Convert the date column to Date format
+data$date <- as.Date(data$date)
+
+# Check for missing values
+sum(is.na(data))
+
+# Impute missing values using linear interpolation
+data$value <- na.interpolation(data$value)
+
+# Convert to time-series object
+data_ts <- ts(data$value, start = c(YYYY, MM), frequency = 12)
+```
+
+## Time-Series Overview
+
+```{r overview}
+# Plot the time-series data
+ggplot(data, aes(x = date, y = value)) +
+  geom_line() +
+  labs(title = "Time-Series Data Overview", x = "Date", y = "Value") +
+  theme_minimal()
+
+# Plot with plotly for interactivity
+p <- ggplot(data, aes(x = date, y = value)) +
+  geom_line(color = "blue") +
+  labs(title = "Interactive Time-Series Data", x = "Date", y = "Value") +
+  theme_minimal()
+
+ggplotly(p)
+```
+
+## Handling Outliers
+
+```{r outliers}
+# Identify outliers using boxplot
+boxplot(data$value, main = "Boxplot for Outlier Detection", ylab = "Value")
+
+# Detect outliers using Z-score
+data <- data %>%
+  mutate(z_score = (value - mean(value)) / sd(value))
+
+# Plot data with Z-score to identify outliers
+ggplot(data, aes(x = date, y = z_score)) +
+  geom_line() +
+  geom_hline(yintercept = c(-3, 3), linetype = "dashed", color = "red") +
+  labs(title = "Outlier Detection Using Z-Score", x = "Date", y = "Z-Score")
+```
+
+## Decomposition of Time-Series
+
+```{r decomposition}
+# Decompose the time series to see trend, seasonality, and noise
+decomp <- decompose(data_ts)
+
+# Plot the decomposition
+plot(decomp)
+
+# Seasonal and trend decomposition using LOESS
+stl_decomp <- stl(data_ts, s.window = "periodic")
+autoplot(stl_decomp)
+
+# Save the decomposition plot as a file
+ggsave("plots/seasonal_decomposition.png")
+```
+
+## Seasonality and Trend Analysis
+
+```{r seasonality-trend}
+# Seasonal plot to check for recurring patterns
+ggseasonplot(data_ts) +
+  ggtitle("Seasonal Plot of Time-Series Data")
+
+# Subseries plot for detailed seasonal analysis
+ggsubseriesplot(data_ts) + 
+  ggtitle("Subseries Plot of Time-Series Data")
+
+# Autocorrelation and partial autocorrelation plots
+ggAcf(data_ts) + ggtitle("Autocorrelation Function")
+ggPacf(data_ts) + ggtitle("Partial Autocorrelation Function")
+```
+
+## Rolling Statistics
+
+```{r rolling-stats}
+# Calculate rolling statistics (mean and variance)
+data <- data %>%
+  mutate(rolling_mean = rollmean(value, 12, fill = NA),
+         rolling_sd = rollapply(value, 12, sd, fill = NA))
+
+# Plot rolling mean and standard deviation
+ggplot(data, aes(x = date)) +
+  geom_line(aes(y = rolling_mean, color = "Rolling Mean")) +
+  geom_line(aes(y = rolling_sd, color = "Rolling SD")) +
+  labs(title = "Rolling Mean and Standard Deviation", x = "Date", y = "Value") +
+  theme_minimal()
+```
+
+## Correlation Analysis
+
+```{r correlation}
+# Calculate correlation matrix if there are multiple features
+correlation_matrix <- cor(data %>% select_if(is.numeric), use = "complete.obs")
+
+# Plot the correlation matrix
+corrplot(correlation_matrix, method = "color", type = "upper", tl.cex = 0.8)
+
+# Save the correlation plot
+ggsave("plots/correlation_matrix.png")
+```
+
+## Stationarity Testing
+
+```{r stationarity-test}
+# Perform Augmented Dickey-Fuller Test for stationarity
+adf_test <- adf.test(data_ts, alternative = "stationary")
+
+# Display ADF test result
+adf_test
+
+# If p-value > 0.05, difference the time series to make it stationary
+data_diff <- diff(data_ts)
+
+# Plot differenced time series
+autoplot(data_diff) +
+  ggtitle("Differenced Time-Series Data")
+```
+
+## Anomaly Detection Preparation
+
+```{r anomaly-preparation}
+# Plot the data with rolling mean to visualize anomalies
+ggplot(data, aes(x = date, y = value)) +
+  geom_line() +
+  geom_line(aes(y = rolling_mean), color = "red") +
+  labs(title = "Time-Series with Rolling Mean", x = "Date", y = "Value") +
+  theme_minimal()
+
+# Plot rolling standard deviation for potential anomaly identification
+ggplot(data, aes(x = date, y = rolling_sd)) +
+  geom_line(color = "purple") +
+  labs(title = "Rolling Standard Deviation", x = "Date", y = "Rolling SD") +
+  theme_minimal()
+```
+
+## Advanced Visualizations
+
+```{r advanced-viz}
+# Histogram to visualize data distribution
+ggplot(data, aes(x = value)) +
+  geom_histogram(binwidth = 5, fill = "blue", alpha = 0.7) +
+  labs(title = "Distribution of Time-Series Values", x = "Value", y = "Frequency")
+
+# Boxplot to visualize distribution across different time periods
+ggplot(data, aes(x = factor(month(date)), y = value)) +
+  geom_boxplot() +
+  labs(title = "Monthly Distribution of Values", x = "Month", y = "Value") +
+  theme_minimal()
+```
+
+## Correlation with External Factors
+
+```{r external-factors}
+# External data for comparison (temperature, financial index)
+external_data <- read.csv("data/processed/external_factors.csv")
+
+# Merge external factors with time-series data
+merged_data <- merge(data, external_data, by = "date")
+
+# Correlation analysis between time-series and external factors
+cor_matrix <- cor(merged_data %>% select(value, external_factor1, external_factor2), use = "complete.obs")
+
+# Plot correlation matrix
+corrplot(cor_matrix, method = "ellipse", type = "upper", tl.cex = 0.8)
+
+# Plot time-series alongside external factor
+ggplot(merged_data, aes(x = date)) +
+  geom_line(aes(y = value, color = "Time-Series")) +
+  geom_line(aes(y = external_factor1, color = "External Factor 1")) +
+  labs(title = "Time-Series vs External Factor 1", x = "Date", y = "Value") +
+  theme_minimal()
+```
+
+## Anomaly Detection Using Statistical Methods
+
+```{r anomaly-detection}
+# Apply simple moving average to detect anomalies
+data$moving_avg <- rollmean(data$value, 12, fill = NA)
+
+# Identify anomalies as points where actual values deviate significantly from moving average
+data <- data %>%
+  mutate(anomaly = ifelse(abs(value - moving_avg) > 2 * sd(value), 1, 0))
+
+# Plot anomalies on the time series
+ggplot(data, aes(x = date, y = value)) +
+  geom_line() +
+  geom_point(data = subset(data, anomaly == 1), aes(x = date, y = value), color = "red", size = 2) +
+  labs(title = "Anomaly Detection Using Moving Average", x = "Date", y = "Value") +
+  theme_minimal()
+
+# Save anomaly plot
+ggsave("plots/anomaly_detection.png")
+```

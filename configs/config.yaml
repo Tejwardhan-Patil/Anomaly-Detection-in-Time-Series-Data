@@ -1,0 +1,182 @@
+# Global settings
+project:
+  name: Anomaly Detection in Time-Series Data
+  root_dir: /root
+
+# Data paths
+data:
+  raw: /data/raw
+  processed: /data/processed
+  features: /data/features
+  train_split: /data/train
+  test_split: /data/test
+
+# Preprocessing settings
+preprocessing:
+  missing_value_strategy: "mean_imputation" 
+  resample_interval: "1H"  
+  normalization: "z_score"  
+  smoothing: 
+    method: "moving_average"
+    window_size: 5
+
+# Feature engineering settings
+feature_engineering:
+  rolling_window:
+    enabled: true
+    window_size: 10
+  lag_features:
+    enabled: true
+    lags: [1, 2, 3]
+  fourier_transform:
+    enabled: true
+    harmonics: 3
+
+# Model configurations
+model:
+  framework: "tensorflow"  
+  models:
+    - traditional:
+        arima:
+          enabled: true
+          params:
+            order: [5, 1, 0]
+        random_forest:
+          enabled: true
+          hyperparameters:
+            n_estimators: 100
+            max_depth: 10
+    - deep_learning:
+        lstm:
+          enabled: true
+          hyperparameters:
+            lstm_units: 64
+            dropout: 0.2
+            batch_size: 32
+            learning_rate: 0.001
+            epochs: 100
+        autoencoder:
+          enabled: true
+          hyperparameters:
+            encoding_dim: 32
+            batch_size: 32
+            learning_rate: 0.001
+            epochs: 100
+    - unsupervised:
+        isolation_forest:
+          enabled: true
+          hyperparameters:
+            n_estimators: 100
+            contamination: 0.05
+        dbscan:
+          enabled: true
+          hyperparameters:
+            eps: 0.5
+            min_samples: 5
+    - ensemble:
+        ensemble_model:
+          enabled: true
+          models_combined:
+            - lstm
+            - random_forest
+            - isolation_forest
+          voting: "soft"
+
+# Training settings
+training:
+  validation_split: 0.2
+  shuffle: true
+  early_stopping:
+    enabled: true
+    patience: 10
+  cross_validation:
+    method: "time_series_split"
+    folds: 5
+
+# Evaluation settings
+evaluation:
+  metrics:
+    - precision
+    - recall
+    - f1_score
+  threshold: 0.5
+  time_series_specific:
+    use_cross_validation: true
+    detection_window: 10  # window size for detecting anomalies
+
+# Experimentation and hyperparameter tuning
+experimentation:
+  tuning_method: "optuna"  
+  max_trials: 100
+  direction: "maximize"
+  parameters:
+    lstm:
+      - name: "learning_rate"
+        min: 0.0001
+        max: 0.01
+      - name: "lstm_units"
+        min: 32
+        max: 128
+      - name: "batch_size"
+        values: [16, 32, 64]
+    autoencoder:
+      - name: "encoding_dim"
+        min: 16
+        max: 64
+      - name: "learning_rate"
+        min: 0.0001
+        max: 0.01
+    isolation_forest:
+      - name: "n_estimators"
+        min: 50
+        max: 200
+      - name: "contamination"
+        min: 0.01
+        max: 0.1
+    random_forest:
+      - name: "n_estimators"
+        min: 50
+        max: 200
+      - name: "max_depth"
+        min: 5
+        max: 20
+
+# Multi-cloud deployment settings
+deployment:
+  cloud:
+    providers:
+      - aws:
+          enabled: true
+          region: "us-west-1"
+          services:
+            - s3
+            - ec2
+            - lambda
+      - gcp:
+          enabled: true
+          region: "us-central1"
+          services:
+            - storage
+            - compute_engine
+            - cloud_functions
+  docker:
+    image: "anomaly_detection:latest"
+    environment: "production"
+
+# Monitoring and logging
+monitoring:
+  log_level: "INFO"
+  metrics_tracking:
+    enabled: true
+    log_file: /logs/metrics.log
+  anomaly_alerts:
+    enabled: true
+    method: "email"
+    email: alerts@website.com
+
+# API settings
+api:
+  type: "flask"
+  host: "0.0.0.0"
+  port: 5000
+  enable_batch_processing: false

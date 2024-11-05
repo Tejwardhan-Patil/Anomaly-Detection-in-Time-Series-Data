@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  app-python:
+    image: python:3.9-slim
+    container_name: anomaly-detection-python
+    build:
+      context: ./deployment/docker/
+      dockerfile: Dockerfile
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./deployment/api:/app/api
+      - ./deployment/scripts:/app/scripts
+    environment:
+      - ENV=production
+      - PYTHONUNBUFFERED=1
+    command: python /app/api/app.py
+    ports:
+      - "8000:8000"
+    networks:
+      - ad-network
+
+  app-r:
+    image: rocker/tidyverse:4.1.2
+    container_name: anomaly-detection-r
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./deployment/api:/app/api
+      - ./deployment/scripts:/app/scripts
+    command: Rscript /app/api/app.R
+    ports:
+      - "8001:8001"
+    networks:
+      - ad-network
+
+  logging-python:
+    image: python:3.9-slim
+    container_name: logging-python
+    volumes:
+      - ./monitoring/logging:/app/logging
+    command: python /app/logging/logger.py
+    networks:
+      - ad-network
+
+  logging-r:
+    image: rocker/tidyverse:4.1.2
+    container_name: logging-r
+    volumes:
+      - ./monitoring/logging:/app/logging
+    command: Rscript /app/logging/logger.R
+    networks:
+      - ad-network
+
+networks:
+  ad-network:
+    driver: bridge

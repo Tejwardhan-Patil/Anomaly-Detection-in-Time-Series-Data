@@ -1,0 +1,167 @@
+pipeline {
+    agent any
+
+    environment {
+        PYTHON_ENV = 'venv'
+        R_ENV = '/R'
+        GCP_PROJECT = 'gcp-project-id'
+        GCP_SERVICE_ACCOUNT = '/gcp-service-account-key.json'
+    }
+
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        retry(3)
+    }
+
+    stages {
+        stage('Initialize') {
+            steps {
+                script {
+                    echo "Setting up environment"
+                    sh 'python3 -m venv ${PYTHON_ENV}'
+                    sh 'source ${PYTHON_ENV}/bin/activate'
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                parallel(
+                    InstallPythonDeps: {
+                        sh '''
+                        source ${PYTHON_ENV}/bin/activate
+                        pip install -r deployment/api/requirements.txt
+                        '''
+                    },
+                    InstallRDeps: {
+                        sh '''
+                        Rscript -e "install.packages(c('ggplot2', 'futile.logger'), repos='http://cran.us.r-project.org')"
+                        '''
+                    }
+                )
+            }
+        }
+
+        stage('Preprocess Data') {
+            steps {
+                script {
+                    echo "Running data preprocessing"
+                    sh '''
+                    source ${PYTHON_ENV}/bin/activate
+                    python core_components/data/scripts/preprocess.py
+                    Rscript core_components/data/scripts/preprocess.R
+                    '''
+                }
+            }
+        }
+
+        stage('Feature Engineering') {
+            steps {
+                sh '''
+                source ${PYTHON_ENV}/bin/activate
+                python core_components/data/scripts/feature_engineering.py
+                '''
+            }
+        }
+
+        stage('Model Training') {
+            steps {
+                sh '''
+                source ${PYTHON_ENV}/bin/activate
+                python core_components/models/train.py
+                '''
+            }
+        }
+
+        stage('Model Evaluation') {
+            steps {
+                parallel(
+                    EvaluatePythonModels: {
+                        sh '''
+                        source ${PYTHON_ENV}/bin/activate
+                        python core_components/models/evaluate.py
+                        '''
+                    },
+                    EvaluateRModels: {
+                        sh '''
+                        Rscript core_components/models/evaluate.R
+                        '''
+                    }
+                )
+            }
+        }
+
+        stage('Run Experiments') {
+            steps {
+                sh '''
+                source ${PYTHON_ENV}/bin/activate
+                python core_components/experiments/scripts/run_experiment.py
+                '''
+            }
+        }
+
+        stage('Deploy to AWS') {
+            steps {
+                sh '''
+                source ${PYTHON_ENV}/bin/activate
+                python deployment/scripts/deploy_aws.py
+                '''
+            }
+        }
+
+        stage('Deploy to GCP') {
+            steps {
+                script {
+                    echo "Deploying to Google Cloud"
+                    sh '''
+                    gcloud auth activate-service-account --key-file=${GCP_SERVICE_ACCOUNT}
+                    gcloud config set project ${GCP_PROJECT}
+                    source ${PYTHON_ENV}/bin/activate
+                    python deployment/scripts/deploy_gcp.py
+                    '''
+                }
+            }
+        }
+
+        stage('Monitoring & Logging') {
+            steps {
+                parallel(
+                    LogPythonModels: {
+                        sh '''
+                        source ${PYTHON_ENV}/bin/activate
+                        python core_components/monitoring/logger.py
+                        python core_components/monitoring/metrics/monitor.py
+                        '''
+                    },
+                    LogRModels: {
+                        sh '''
+                        Rscript core_components/monitoring/logger.R
+                        Rscript core_components/monitoring/metrics/monitor.R
+                        '''
+                    }
+                )
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo "Cleaning up workspace"
+                sh 'deactivate'
+            }
+        }
+
+        success {
+            script {
+                echo "Pipeline succeeded"
+            }
+        }
+
+        failure {
+            script {
+                echo "Pipeline failed"
+            }
+        }
+    }
+}
